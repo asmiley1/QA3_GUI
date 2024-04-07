@@ -16,7 +16,10 @@ class SelectSubjectApp:
         self.cursor = self.conn.cursor()
         self.available_tables = self.get_table_names()
 
-        self.category_combobox = ttk.Combobox(master, values=self.available_tables)
+        # Convert table names to Proper Case and remove underscores
+        self.available_tables_proper = [self.to_proper_case(name) for name in self.available_tables]
+
+        self.category_combobox = ttk.Combobox(master, values=self.available_tables_proper)
         self.category_combobox.pack()
 
         self.start_button = tk.Button(master, text="Start Quiz", command=self.start_quiz)
@@ -27,8 +30,13 @@ class SelectSubjectApp:
         table_names = self.cursor.fetchall()
         return [table[0] for table in table_names]
 
+    def to_proper_case(self, name):
+        return name.replace('_', ' ').title()
+
     def start_quiz(self):
-        category = self.category_combobox.get()
+        category_proper = self.category_combobox.get()
+        category = self.available_tables[self.available_tables_proper.index(category_proper)]
+
         if category:
             self.master.withdraw()  # Hide category selection window
             self.callback(category)
@@ -45,35 +53,42 @@ class QuizGameApp(tk.Toplevel):
         
         self.questions = self.fetch_questions()
         self.current_question_index = 0
+        self.correct_answers = 0
+        self.wrong_answers = 0
         
         self.display_question()
 
     def fetch_questions(self):
-        self.cursor.execute(f"SELECT question, option_a, option_b, option_c, option_d, correct_option FROM {self.category} LIMIT 10;")
+        self.cursor.execute(f"SELECT question, option_a, option_b, option_c, option_d, correct_option FROM {self.category};")
         return self.cursor.fetchall()
 
     def display_question(self):
-        question, option_a, option_b, option_c, option_d, correct_option = self.questions[self.current_question_index]
-        
-        question_label = tk.Label(self, text=f"Question {self.current_question_index + 1}: {question}")
-        question_label.pack()
+        if self.current_question_index < len(self.questions):
+            question, option_a, option_b, option_c, option_d, correct_option = self.questions[self.current_question_index]
 
-        option_buttons = [
-            ("A", option_a),
-            ("B", option_b),
-            ("C", option_c),
-            ("D", option_d)
-        ]
+            question_label = tk.Label(self, text=f"Question {self.current_question_index + 1}: {question}")
+            question_label.pack()
 
-        for letter, option in option_buttons:
-            option_button = tk.Button(self, text=f"{letter}. {option}", command=lambda ans=letter: self.check_answer(ans, correct_option))
-            option_button.pack()
+            option_buttons = [
+                ("A", option_a),
+                ("B", option_b),
+                ("C", option_c),
+                ("D", option_d)
+            ]
+
+            for letter, option in option_buttons:
+                option_button = tk.Button(self, text=f"{letter}. {option}", command=lambda ans=letter: self.check_answer(ans, correct_option))
+                option_button.pack()
+        else:
+            self.display_end_message()
 
     def check_answer(self, selected_answer, correct_answer):
         if selected_answer.upper() == correct_answer.upper():
-            feedback = "Congrats!"
+            self.correct_answers += 1
+            feedback = "Correct!"
             color = "green"
         else:
+            self.wrong_answers += 1
             feedback = "Sorry, better luck next time!"
             color = "red"
         
@@ -82,21 +97,26 @@ class QuizGameApp(tk.Toplevel):
 
         self.current_question_index += 1
 
-        if self.current_question_index < len(self.questions):
-            self.display_question()
-        else:
-            self.display_end_message()
+        self.after(2000, self.clear_screen)
+        self.after(2000, self.display_question)
 
     def display_end_message(self):
         end_label = tk.Label(self, text="End of Quiz")
         end_label.pack()
 
-        select_another_button = tk.Button(self, text="Select Another Category", command=self.select_another_category)
-        select_another_button.pack()
+        total_label = tk.Label(self, text=f"Total Correct: {self.correct_answers}, Total Wrong: {self.wrong_answers}")
+        total_label.pack()
 
-    def select_another_category(self):
+        play_again_button = tk.Button(self, text="Play Again", command=self.play_again)
+        play_again_button.pack()
+
+    def play_again(self):
         self.destroy()  # Close the quiz window
         root.deiconify()  # Show the category selection window
+
+    def clear_screen(self):
+        for widget in self.winfo_children():
+            widget.destroy()
 
 def start_quiz(category):
     quiz_window = QuizGameApp(root, category)
